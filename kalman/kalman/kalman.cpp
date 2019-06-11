@@ -8,7 +8,7 @@
 #include "matrixCalculate.h"
 #include "info.h"
 
-
+#define FREQUENCY 1
 using namespace std;
 
 
@@ -16,14 +16,15 @@ using namespace std;
 void renewBodyData(double *Cn2b, double V[], double f[], double &latit, double &longti, double &h)
 {
 	double  Rm, Rn;
+	const double sampleTime = 1;
 	Rm = Re * (1 - 2 * f_ + 3 * f_*sin(latit)*sin(latit)), Rn = Re * (1 + f_ * sin(latit) * sin(latit));
 
 	double tmp1 = V[1] / (Rm + h), tmp2 = 2.0*Wie + V[0] / ((Rn + h)*cos(latit));
 	double deta_V[3], fe, fn, fu;
 
 	fe = Cn2b[0] * f[0] + Cn2b[3] * f[1] + Cn2b[6] * f[2];		//载体下比力转东北天
-	fn = Cn2b[3] * f[1] + Cn2b[4] * f[1] + Cn2b[7] * f[2];
-	fu = Cn2b[6] * f[2] + Cn2b[5] * f[1] + Cn2b[8] * f[2];
+	fn = Cn2b[1] * f[1] + Cn2b[4] * f[1] + Cn2b[7] * f[2];
+	fu = Cn2b[2] * f[2] + Cn2b[5] * f[1] + Cn2b[8] * f[2];
 
 	deta_V[0] = (fe + tmp2 * sin(latit)*V[1] - tmp2 * cos(latit) * V[2]) * sampleTime;
 	deta_V[1] = (fn - tmp2 * sin(latit)*V[0] - tmp1 * V[2]) * sampleTime;
@@ -126,9 +127,9 @@ void initFilter(double R0[], double X0[], double P0[], double Hk[])
 	P0[224] = 0.0001;
 }
 
-void renewFk(double F[], double Cn2b[], double f[], double lati, double high, double &Rm, double &Rn)
+void renewFk(double F[], double Cn2b[], double f[], double lati, double high)
 {
-	double sec;
+	double sec, Rm, Rn;
 	sec = 1 / cos(lati);
 	Rm = Re * (1 - 2 * f_ + 3 * f_*sin(lati)*sin(lati));
 	Rn = Re * (1 + f_ * sin(lati)*sin(lati));
@@ -170,6 +171,8 @@ void renewCn2b(double Cn2b[], double p, double r, double y)
 	Cn2b[6] = -cos(p) * sin(r);
 	Cn2b[7] = sin(p);
 	Cn2b[8] = cos(p) * cos(r);
+	
+
 }
 
 /*
@@ -198,6 +201,7 @@ void renewVelocityAndPosition(double r[], double V[], double f[], double Rm, dou
 
 void renewZk(double Zk[], double r_imu[3], double v_imu[3], double r[3], double v[3])
 {
+	cout << r_imu[0] << " " << r[0] << endl;
 	Zk[0] = r_imu[0] - r[0];
 	Zk[1] = r_imu[1] - r[1];
 	Zk[2] = r_imu[2] - r[2];
@@ -227,7 +231,7 @@ void writeToFile(ofstream out[], double t_value[])
 
 int main()
 {
-	double Rm, Rn, r[3], f[3], V[3], Cn2b[9], t_value[15];	//t_value[]分别为纬度、经度、高度、东北天的速度、3轴陀螺仪、3轴加速度
+	double r[3], f[3], V[3], Cn2b[9], t_value[15];	//t_value[]分别为纬度、经度、高度、东北天的速度、3轴陀螺仪、3轴加速度
 	double &lati = t_value[0], &longti = t_value[1], &height = t_value[2], &ve = t_value[3], &vn = t_value[4]\
 		, &vu = t_value[5], &pitch = t_value[6], &roll = t_value[7], &yaw = t_value[8], &wx = t_value[9] = 0, \
 		&wy = t_value[10] = 0, &wz = t_value[11] = 0, &ax = t_value[12], &ay = t_value[13], &az = t_value[14];
@@ -235,7 +239,6 @@ int main()
 	double heading, velocity;
 
 	double Xk[N] = { 0 }, Fk[N*N] = { 0 }, Pk[N*N] = { 0 }, Qk[N*N] = { 0 }, Kk[N*M] = { 0 }, Hk[M*N] = { 0 }, Rk[M*M] = { 0 }, Zk[M] = { 0 };
-	double rk_1[3], vk_1[3], fk_1[3];	//imu的位置、速度、比力
 
 	ifstream in[11];	//从磁盘读取11个文件
 	ofstream out[15];	//
@@ -269,15 +272,15 @@ int main()
 	initFilter(Rk, Xk, Pk, Hk);
 	double imu_r[3], imu_v[3] = { 0 };
 	imu_r[0] = vec_in[3][0] * D_h, imu_r[1] = vec_in[4][0] * D_h, imu_r[2] = vec_in[5][0];
-	for (int cnt = 1, number = vec_in->size(); cnt < number; ++cnt) {	//循环次数由GPS的数据个数决定
+	for (int cnt = 0, number = vec_in->size(); cnt < number; ++cnt) {	//循环次数由GPS的数据个数决定
 
 		pitch = vec_in[8][cnt] * D_h;
 		roll = vec_in[9][cnt] * D_h;
 		yaw = vec_in[10][cnt] * D_h;
-
-		lati = vec_in[3][cnt] * D_h;
-		longti = vec_in[4][cnt] * D_h;
-		height = vec_in[5][cnt];
+		
+		r[0] = lati = vec_in[3][cnt] * D_h;
+		r[1] = longti = vec_in[4][cnt] * D_h;
+		r[2] = height = vec_in[5][cnt];
 
 
 		ax = (vec_in[0][cnt] - dt_ax) * g_;		//减去零飘
@@ -295,25 +298,33 @@ int main()
 		V[0] = fabs(ve), V[1] = fabs(vn), V[2] = vu;	//当前V_gps
 
 		renewCn2b(Cn2b, pitch, roll, yaw);
-		renewFk(Fk, Cn2b, f, lati, height, Rm, Rn);
-		renewBodyData(Cn2b, f, imu_v, imu_r[0], imu_r[1], imu_r[2]);
+		
+		if ((cnt+1) % FREQUENCY == 0) {
+			renewFk(Fk, Cn2b, f, lati, height);
+			white(Qk);		//更新Qk
+		//	renewVelocityAndPosition(rk_1, vk_1, fk_1, Rm, Rn);
+			renewZk(Zk, imu_r, imu_v, r, V);
 
-		white(Qk);		//更新Qk
-	//	renewVelocityAndPosition(rk_1, vk_1, fk_1, Rm, Rn);
-		renewZk(Zk, rk_1, vk_1, r, V);
+			kalman(Xk, Fk, Pk, Qk, Kk, Hk, Rk, Zk);
 
-		kalman(Xk, Fk, Pk, Qk, Kk, Hk, Rk, Zk);
+		//	for (int i = 0; i < N; ++i) {			//每过一次kalman, 修正一次值
 
+			//	cout << Xk[i] << " "; 
+				//t_value[i] -= Xk[i];
+				lati -= Xk[0], longti -= Xk[1], height -= Xk[2];	//修正纬度经度高度
 
-		for (int i = 0; i < N; ++i) {			//每过一次kalman, 修正一次值
+				ve -= Xk[3], vn -= Xk[4], vu -= Xk[5];		//修正速度
 
-		//	cout << Xk[i] << " "; 
-			t_value[i] -= Xk[i];
-			//	cout << t_value[i] << " ";
+				//cout << cnt << ": " << lati << " " << longti << " " << height << endl;
+				//	cout << t_value[i] << " ";
+	//		}
 		}
+		renewBodyData(Cn2b, imu_v, f, imu_r[0], imu_r[1], imu_r[2]);
 		writeToFile(out, t_value);
 	}
 
+	for (int i = 0; i < N; ++i)
+		cout << Xk[i] << endl;
 	for (int i = 0; i < 15; ++i)		//关闭文件
 		out[i].close();
 
